@@ -1,0 +1,32 @@
+# Virtual environment
+venv/
+env/
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# API keys (important!)
+.env
+*.env
+
+# Streamlit
+.streamlit/
+
+# Temporary files
+*.tmp
+*.log
