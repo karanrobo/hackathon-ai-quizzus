@@ -241,7 +241,7 @@ def generate_quiz_from_text(extracted_text):
     Text:
     \"\"\"{extracted_text}\"\"\"
     
-    Return only valid JSON format, do not label questions.
+    Return only valid JSON format, do not label questions, do not provide any other information.
     """
 
     payload = {
