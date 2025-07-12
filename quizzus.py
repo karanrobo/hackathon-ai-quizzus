@@ -11,12 +11,14 @@ from PIL import Image
 import easyocr
 import numpy as np
 import json
+from bs4 import BeautifulSoup
 
 # Initialize variables properly
 extracted_text = ""
 uploaded_pdf = None
 uploaded_image = None
 text_input = ""
+submitted = None
 
 
 st.set_page_config(page_title="Quiz Generator", layout="centered")
@@ -299,14 +301,41 @@ else:
 
 # You can add quiz parsing and display logic here
 st.title("Quiz Time!")
+# ...existing code...
+
+if submitted and st.session_state.api_valid:
+    with st.spinner("🧠 Generating quiz questions..."):
+        try:
+            response = generate_quiz_from_text(st.session_state.extracted_text)
+            
+            if response.status_code == 200:
+                result = response.json()
+                quiz_content_raw = result["choices"][0]["message"]["content"]
+                
+                # Store in session state so it persists!
+                st.session_state.quiz_content = quiz_content_raw
+                
+                st.success("🎉 Quiz generated successfully!")
+                st.subheader("📋 Generated Quiz")
+                
+                # Show raw response for debugging
+                with st.expander("🔍 View Raw Response", expanded=False):
+                    st.code(quiz_content_raw, language="json")
+                
+            else:
+                st.error(f"API Error: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            st.error(f"Error generating quiz: {str(e)}")
 
 # Display quiz if it exists in session state
 if st.session_state.quiz_content:
     try:
         quiz_content = json.loads(st.session_state.quiz_content)
+        
         if not isinstance(quiz_content, list):
             st.error("❌ Expected a list of questions, but got a different format.")
-            st.stop()
+            # Don't use st.stop() here, it will stop the entire app
         else:
             st.markdown("---")
             st.title("📝 Quiz Time!")
@@ -329,29 +358,199 @@ if st.session_state.quiz_content:
                 # Store answer in session state
                 if answer:
                     st.session_state.user_answers[i] = answer
+            
+            # Check if all questions are answered
+            total_questions = len(quiz_content)
+            answered_questions = len(st.session_state.user_answers)
+            
+            if answered_questions == total_questions:
+                if st.button("📊 Submit Quiz"):
+                    score = 0
+                    
+                    st.markdown("---")
+                    st.subheader("🎯 Quiz Results")
+                    
+                    for i, q in enumerate(quiz_content):
+                        user_answer = st.session_state.user_answers.get(i, "No answer")
+                        correct_answer = q['answer']
+                        is_correct = user_answer == correct_answer
+                        
+                        if is_correct:
+                            score += 1
+                            st.success(f"Q{i+1}: ✅ Correct! Your answer: {user_answer}")
+                        else:
+                            st.error(f"Q{i+1}: ❌ Wrong. Your answer: {user_answer} | Correct: {correct_answer}")
+                    
+                    # Show final score
+                    percentage = (score / total_questions) * 100
+                    st.markdown("---")
+                    st.metric("Final Score", f"{score}/{total_questions}", f"{percentage:.1f}%")
+                    
+                    if percentage >= 80:
+                        st.balloons()
+                        st.success("🎉 Excellent work!")
+                    elif percentage >= 60:
+                        st.success("👍 Good job!")
+                    else:
+                        st.info("📚 Keep studying!")
+                        
+                    # Add button to generate new quiz
+                    if st.button("🔄 Generate New Quiz"):
+                        st.session_state.quiz_content = None
+                        st.session_state.user_answers = {}
+                        st.rerun()
+            else:
+                st.info(f"📝 Please answer all questions ({answered_questions}/{total_questions} completed)")
 
-
-    except json.decoder.JSONDecodeError as e:
+    except json.JSONDecodeError as e:
         st.error(f"❌ Failed to parse quiz JSON: {e}")
         st.error("The AI response was not in valid JSON format. Try generating again.")
+        
+        # Add button to clear and try again
+        if st.button("🔄 Clear and Try Again"):
+            st.session_state.quiz_content = None
+            st.rerun()
 
-# after wrong questions, point them towards sources to read more
+else:
+    if st.session_state.extracted_text:
+        st.info("👆 Click 'Generate Quiz' to create questions from your content!")
+    else:
+        st.info("👆 Please extract some content first to generate a quiz!")
+
+# Replace the existing "Next Steps" section with this:
+
+
+def generate_summary_from_text(extracted_text):
+    prompt = f"""
+    Based on the following text, generate a short summary
+    Text:
+    \"\"\"{extracted_text}\"\"\"
+    """
+
+    payload = {
+        "model": "mistralai/mistral-7b-instruct",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 1000,
+        "temperature": 0.7
+    }
+
+    response = requests.post(
+        API_URL,
+        headers={"Authorization": f"Bearer {st.session_state.hf_token}"},
+        json=payload
+    )
+
+    if response.status_code == 200:
+        return response.json()['choices'][0]['message']['content'].strip()
+    else:
+        st.error(f"API Error: {response.status_code}")
+        return "Failed to generate summary."
+
+
+def duckduckgo_search(query, n=3):
+    url = f"https://html.duckduckgo.com/html/?q={query}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    res = requests.get(url, headers=headers)
+    soup = BeautifulSoup(res.text, "html.parser")
+
+    results = []
+    for a in soup.find_all("a", class_="result__a", limit=n):
+        results.append({
+            "title": a.get_text(),
+            "link": a['href']
+        })
+    return results
+
+
+def generate_search_queries_from_text(extracted_text):
+    prompt = f"""
+    Based on the following text, generate 3–5 concise keyword phrases or search queries 
+    that a user could use to find further reading or explanations online.
+    
+    Return only the search queries as a plain list (no numbering or explanations).
+
+    Text:
+    \"\"\"{extracted_text}\"\"\"
+    """
+
+    payload = {
+        "model": "mistralai/mistral-7b-instruct",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 300,
+        "temperature": 0.5
+    }
+
+    response = requests.post(
+        API_URL,
+        headers={"Authorization": f"Bearer {st.session_state.hf_token}"},
+        json=payload
+    )
+
+    if response.status_code == 200:
+        text = response.json()['choices'][0]['message']['content']
+        # Split into list of keywords/queries
+        queries = [line.strip("•- ").strip() for line in text.strip().splitlines() if line.strip()]
+        return queries
+    else:
+        st.error("Failed to generate keywords.")
+        return []
+    # After generating keywords
 
 
 
+st.markdown("---")
+st.title("🚀 Next Steps")
 
-# def render_progress(current_step):
-#     steps = [
-#         "1️⃣ Select Input & API",
-#         "2️⃣ Submit Content",
-#         "3️⃣ Generate Quiz",
-#         "4️⃣ Play or Download",
-#     ]
-#     cols = st.columns(len(steps))
-#     for i, col in enumerate(cols):
-#         if i < current_step:
-#             col.success(steps[i])
-#         elif i == current_step:
-#             col.warning(steps[i])
-#         else:
-#             col.info(steps[i])
+# Create two main columns for primary options
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("📝 Create a Summary")
+    st.write("Generate an AI-powered summary of your extracted content to better understand key concepts.")
+    
+    if st.button("✨ Generate Summary", type="primary", use_container_width=True):
+        if st.session_state.extracted_text:
+            with st.spinner("🧠 Creating summary..."):
+                st.success("📋 Summary generated! (Feature coming soon)")
+                summary = generate_summary_from_text(extracted_text)
+                st.subheader("📘 Summary")
+                st.write(summary)
+        else:
+            st.warning("⚠️ Please extract some content first!")
+
+with col2:
+    st.subheader("📚 Further Reading")
+    st.write("Get personalized recommendations for additional learning resources and related topics.")
+    
+    if st.button("🔍 Find Resources", type="secondary", use_container_width=True):
+        if st.session_state.extracted_text:
+            with st.spinner("🔎 Finding resources..."):
+                queries = generate_search_queries_from_text(extracted_text)
+
+                st.success("📖 Resources found! (Feature coming soon)")
+                for q in queries:
+                    st.markdown(f"### 🔍 Further Reading: *{q}*")
+                    links = duckduckgo_search(q)
+                    for r in links:
+                        st.markdown(f"- [{r['title']}]({r['link']})") 
+
+               
+        else:
+            st.warning("⚠️ Please extract some content first!")
+
+st.markdown("---")
+
+
+# Pro Tips section using info container
+st.markdown("---")
+st.info("""
+💡 **Pro Tips:**
+- 📷 For better OCR results, use clear, high-contrast images
+- 📚 Longer texts generate more comprehensive quizzes
+- 🔄 Try different question counts to find your ideal quiz length
+- ✏️ Edit extracted text to focus on specific topics
+""")
