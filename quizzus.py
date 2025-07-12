@@ -445,7 +445,7 @@ def duckduckgo_search(query, n=3):
 
 def generate_search_queries_from_text(extracted_text):
     prompt = f"""
-    Based on the following text, generate 3–5 concise keyword phrases or search queries 
+    Based on the following text, generate 3 concise keyword phrases or search queries 
     that a user could use to find further reading or explanations online.
     
     Return only the search queries as a plain list (no numbering or explanations).
@@ -523,22 +523,16 @@ if st.button("🔍 Find Resources", type="secondary", use_container_width=True):
         with st.spinner("🔎 Finding resources..."):
             try:
                 queries = generate_search_queries_from_text(st.session_state.extracted_text)
-                
+               
                 if queries:
                     st.success("📖 Learning resources found!")
                     st.subheader("🔍 Recommended Search Topics")
-                    
-                    for i, query in enumerate(queries):
-                        st.markdown(f"**{i+1}. {query}**")
+                    for i in range(len(queries)):
+                        st.write(queries[i].replace("\"", ""))
+                        links = duckduckgo_search(queries[i])
                         
-                        # Generate simple educational links
-                        links = duckduckgo_search(query)
-                        
-                        # Display in a nice format
-                        link_cols = st.columns(2)
-                        for j, link in enumerate(links[:4]):  # Show 4 links
-                            with link_cols[j % 2]:
-                                st.markdown(f"📖 [{link['title']}]({link['link']})")
+                        for link in links:
+                            st.markdown(f"📖 [{link['title']}]({link['link']})")
                         
                         st.markdown("---")
                 else:
