@@ -273,37 +273,18 @@ if st.session_state.extracted_text:
         st.write(f"Content length: {len(st.session_state.extracted_text)} characters")
         st.write(f"Number of Questions: {num_questions}")
         submitted = st.form_submit_button("🎯 Generate Quiz!", help="Generate quiz from this text")
-
-    if submitted and st.session_state.api_valid:
-        with st.spinner("🧠 Generating quiz questions..."):
-            try:
-                response = generate_quiz_from_text(st.session_state.extracted_text)
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    quiz_content = result["choices"][0]["message"]["content"]
-                    
-                    st.success("🎉 Quiz generated successfully!")
-                    st.subheader("📋 Generated Quiz")
-
-                    st.code(quiz_content, language="json")
-                    
-                else:
-                    st.error(f"API Error: {response.status_code} - {response.text}")
-                    
-            except Exception as e:
-                st.error(f"Error generating quiz: {str(e)}")
 else:
     st.info("👆 Please extract some content first to generate a quiz!")
 
 
 
 
-# You can add quiz parsing and display logic here
-st.title("Quiz Time!")
-# ...existing code...
-
 if submitted and st.session_state.api_valid:
+  
+    st.session_state.quiz_content = None
+    if "user_answers" in st.session_state:
+        del st.session_state.user_answers
+        
     with st.spinner("🧠 Generating quiz questions..."):
         try:
             response = generate_quiz_from_text(st.session_state.extracted_text)
@@ -312,13 +293,12 @@ if submitted and st.session_state.api_valid:
                 result = response.json()
                 quiz_content_raw = result["choices"][0]["message"]["content"]
                 
-                # Store in session state so it persists!
+           
                 st.session_state.quiz_content = quiz_content_raw
                 
                 st.success("🎉 Quiz generated successfully!")
                 st.subheader("📋 Generated Quiz")
-                
-                # Show raw response for debugging
+         
                 with st.expander("🔍 View Raw Response", expanded=False):
                     st.code(quiz_content_raw, language="json")
                 
@@ -327,6 +307,9 @@ if submitted and st.session_state.api_valid:
                 
         except Exception as e:
             st.error(f"Error generating quiz: {str(e)}")
+
+
+
 
 # Display quiz if it exists in session state
 if st.session_state.quiz_content:
@@ -422,7 +405,7 @@ else:
 
 def generate_summary_from_text(extracted_text):
     prompt = f"""
-    Based on the following text, generate a short summary
+    Based on the following text, generate a short summary 
     Text:
     \"\"\"{extracted_text}\"\"\"
     """
@@ -442,11 +425,7 @@ def generate_summary_from_text(extracted_text):
         json=payload
     )
 
-    if response.status_code == 200:
-        return response.json()['choices'][0]['message']['content'].strip()
-    else:
-        st.error(f"API Error: {response.status_code}")
-        return "Failed to generate summary."
+    return response
 
 
 def duckduckgo_search(query, n=3):
@@ -505,42 +484,70 @@ def generate_search_queries_from_text(extracted_text):
 st.markdown("---")
 st.title("🚀 Next Steps")
 
-# Create two main columns for primary options
-col1, col2 = st.columns(2)
 
-with col1:
-    st.subheader("📝 Create a Summary")
-    st.write("Generate an AI-powered summary of your extracted content to better understand key concepts.")
-    
-    if st.button("✨ Generate Summary", type="primary", use_container_width=True):
-        if st.session_state.extracted_text:
-            with st.spinner("🧠 Creating summary..."):
-                st.success("📋 Summary generated! (Feature coming soon)")
-                summary = generate_summary_from_text(extracted_text)
-                st.subheader("📘 Summary")
-                st.write(summary)
-        else:
-            st.warning("⚠️ Please extract some content first!")
+st.subheader("📝 Create a Summary")
+st.write("Generate an AI-powered summary of your extracted content to better understand key concepts.")
 
-with col2:
-    st.subheader("📚 Further Reading")
-    st.write("Get personalized recommendations for additional learning resources and related topics.")
-    
-    if st.button("🔍 Find Resources", type="secondary", use_container_width=True):
-        if st.session_state.extracted_text:
-            with st.spinner("🔎 Finding resources..."):
-                queries = generate_search_queries_from_text(extracted_text)
+if st.button("✨ Generate Summary", type="primary", use_container_width=True):
+    if st.session_state.extracted_text:
+        with st.spinner("🧠 Creating summary..."):
+            st.success("📋 Summary generated! (Feature coming soon)")
+            try:
+                response = generate_summary_from_text(st.session_state.extracted_text)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    summary = result["choices"][0]["message"]["content"]
+                    
+                    st.success("📋 Summary generated successfully!")
+                    st.subheader("📄 Summary")
+                    st.write(summary)
+                    
+                    # Store summary in session state
+                    st.session_state.summary = summary
+                    
+                else:
+                    st.error(f"Failed to generate summary. Status: {response.status_code}")
+                    
+            except Exception as e:
+                st.error(f"Error generating summary: {str(e)}")
+    else:
+        st.warning("⚠️ Please extract some content first!")
 
-                st.success("📖 Resources found! (Feature coming soon)")
-                for q in queries:
-                    st.markdown(f"### 🔍 Further Reading: *{q}*")
-                    links = duckduckgo_search(q)
-                    for r in links:
-                        st.markdown(f"- [{r['title']}]({r['link']})") 
 
-               
-        else:
-            st.warning("⚠️ Please extract some content first!")
+st.subheader("📚 Further Reading")
+st.write("Get personalized recommendations for additional learning resources and related topics.")
+
+if st.button("🔍 Find Resources", type="secondary", use_container_width=True):
+    if st.session_state.extracted_text:
+        with st.spinner("🔎 Finding resources..."):
+            try:
+                queries = generate_search_queries_from_text(st.session_state.extracted_text)
+                
+                if queries:
+                    st.success("📖 Learning resources found!")
+                    st.subheader("🔍 Recommended Search Topics")
+                    
+                    for i, query in enumerate(queries):
+                        st.markdown(f"**{i+1}. {query}**")
+                        
+                        # Generate simple educational links
+                        links = duckduckgo_search(query)
+                        
+                        # Display in a nice format
+                        link_cols = st.columns(2)
+                        for j, link in enumerate(links[:4]):  # Show 4 links
+                            with link_cols[j % 2]:
+                                st.markdown(f"📖 [{link['title']}]({link['link']})")
+                        
+                        st.markdown("---")
+                else:
+                    st.warning("Could not generate search topics. Try with different content.")
+                    
+            except Exception as e:
+                st.error(f"Error finding resources: {str(e)}")
+    else:
+        st.warning("⚠️ Please extract some content first!")
 
 st.markdown("---")
 
