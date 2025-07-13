@@ -66,6 +66,10 @@ Select from three content sources:
 - View your score and correct answers
 - Generate a new quiz if desired
 
+### Further steps:
+ - Make a sumamry based on the input
+ - Get further links based on the inputs
+
 ## Supported File Formats
 
 - **Images**: PNG, JPG, JPEG
